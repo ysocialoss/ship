@@ -1,5 +1,6 @@
 import {
-  Alignment, Button, Classes, H1, Icon, Navbar, NavbarGroup, NavbarHeading, Switch,
+  Alignment, Button, Classes, Dialog, DialogBody, H1, Icon,
+  Menu, MenuDivider, MenuItem, Navbar, NavbarGroup, NavbarHeading, PopoverNext,
 } from '@blueprintjs/core'
 import { useState, useSyncExternalStore } from 'react'
 import { Board } from './Board'
@@ -21,6 +22,12 @@ function mediaPreference(query: MediaQueryList) {
 const darkPreference = mediaPreference(systemTheme)
 const desktopLayout = mediaPreference(wideViewport)
 
+const appearanceOptions = [
+  { id: 'system', label: 'System' },
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' },
+] as const
+
 const sidebarViews = [
   { id: 'work-items', title: 'Work Items', icon: 'layout' },
   { id: 'modules', title: 'Modules', icon: 'layers' },
@@ -39,9 +46,11 @@ function getActiveView() {
 function App() {
   const systemDarkMode = useSyncExternalStore(darkPreference.subscribe, darkPreference.getSnapshot)
   const isDesktop = useSyncExternalStore(desktopLayout.subscribe, desktopLayout.getSnapshot)
-  const [themeOverride, setThemeOverride] = useState<boolean | null>(null)
   const [sidebarOverride, setSidebarOverride] = useState<boolean | null>(null)
-  const darkMode = themeOverride ?? systemDarkMode
+  const [appearance, setAppearance] = useState<(typeof appearanceOptions)[number]['id']>('system')
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const darkMode = appearance === 'system' ? systemDarkMode : appearance === 'dark'
   const sidebarOpen = sidebarOverride ?? isDesktop
   const activeView = useSyncExternalStore(subscribeToLocation, getActiveView)
 
@@ -60,7 +69,10 @@ function App() {
             aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
             aria-expanded={sidebarOpen}
             aria-controls="app-sidebar"
-            onClick={() => setSidebarOverride(!sidebarOpen)}
+            onClick={() => {
+              setSidebarOverride(!sidebarOpen)
+              setAccountMenuOpen(false)
+            }}
           />
           <NavbarHeading>Ship</NavbarHeading>
         </NavbarGroup>
@@ -85,10 +97,57 @@ function App() {
             </ul>
           </nav>
           <div className="sidebar-footer">
-            <Switch
-              label="Dark mode"
-              checked={darkMode}
-              onChange={(event) => setThemeOverride(event.currentTarget.checked)}
+            <PopoverNext
+              className="sidebar-profile"
+              fill
+              arrow
+              placement={isDesktop ? 'top-start' : 'bottom-start'}
+              middleware={{ offset: { mainAxis: 10 } }}
+              isOpen={accountMenuOpen}
+              onInteraction={setAccountMenuOpen}
+              renderTarget={(targetProps) => (
+                <button
+                  {...targetProps}
+                  type="button"
+                  aria-label="Account options for Full Name"
+                  onKeyDown={undefined}
+                >
+                  <span className="sidebar-avatar">
+                    <Icon icon="person" size={16} aria-hidden="true" />
+                  </span>
+                  <span className="sidebar-profile-details">
+                    <span className="sidebar-profile-name">Full Name</span>
+                    <span className={Classes.TEXT_MUTED}>@username</span>
+                  </span>
+                  <Icon className="sidebar-profile-chevron" icon="chevron-down" size={12} aria-hidden="true" />
+                </button>
+              )}
+              content={
+                <Menu aria-label="Account options">
+                  <MenuItem
+                    icon="user"
+                    text="Profile"
+                    onClick={() => {
+                      setAccountMenuOpen(false)
+                      setProfileOpen(true)
+                    }}
+                  />
+                  <MenuDivider title="Appearance" />
+                  {appearanceOptions.map((option) => (
+                    <MenuItem
+                      key={option.id}
+                      icon={appearance === option.id ? 'tick' : 'blank'}
+                      roleStructure="menuitem"
+                      role="menuitemradio"
+                      aria-checked={appearance === option.id}
+                      text={option.label}
+                      onClick={() => setAppearance(option.id)}
+                    />
+                  ))}
+                  <MenuDivider />
+                  <MenuItem icon="log-out" text="Log out" disabled />
+                </Menu>
+              }
             />
           </div>
         </aside>
@@ -101,6 +160,12 @@ function App() {
           </main>
         )}
       </div>
+      <Dialog isOpen={profileOpen} onClose={() => setProfileOpen(false)} title="Profile" usePortal={false}>
+        <DialogBody>
+          <p><strong>Full Name</strong></p>
+          <p className={Classes.TEXT_MUTED}>@username</p>
+        </DialogBody>
+      </Dialog>
     </div>
   )
 }
