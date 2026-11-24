@@ -9,21 +9,13 @@ import {
 import type { CollisionDetection, DragEndEvent, DragMoveEvent } from '@dnd-kit/core'
 import { lazy, Suspense, useLayoutEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
+import { columns } from './boardColumns'
+import type { ColumnId } from './boardColumns'
 
 const DateInput = lazy(async () => {
   const { DateInput } = await import('@blueprintjs/datetime')
   return { default: DateInput }
 })
-
-const columns = [
-  { id: 'backlog', title: 'Backlog', icon: 'circle', intent: 'none' },
-  { id: 'todo', title: 'To do', icon: 'circle', intent: 'none' },
-  { id: 'progress', title: 'In progress', icon: 'time', intent: 'primary' },
-  { id: 'review', title: 'In review', icon: 'eye-open', intent: 'warning' },
-  { id: 'done', title: 'Done', icon: 'tick-circle', intent: 'success' },
-] as const
-
-type ColumnId = (typeof columns)[number]['id']
 
 interface DropTarget {
   column: ColumnId
@@ -154,7 +146,7 @@ export function Board() {
   }
   return (
     <main className="board">
-      <H1>Work items</H1>
+      <H1 id="work-items">Work Items</H1>
       <div className="board-announcement" role="status">{announcement}</div>
       {storageError && <p role="alert">Board changes could not be saved in this browser.</p>}
       <DndContext
