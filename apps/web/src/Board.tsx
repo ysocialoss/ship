@@ -154,7 +154,7 @@ export function Board() {
   }
   return (
     <main className="board">
-      <H1>Product launch</H1>
+      <H1>Work items</H1>
       <div className="board-announcement" role="status">{announcement}</div>
       {storageError && <p role="alert">Board changes could not be saved in this browser.</p>}
       <DndContext
