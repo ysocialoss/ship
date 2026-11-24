@@ -1,5 +1,6 @@
-import { Alignment, Card, Classes, H1, Navbar, NavbarGroup, NavbarHeading, Switch } from '@blueprintjs/core'
+import { Alignment, Classes, Navbar, NavbarGroup, NavbarHeading, Switch } from '@blueprintjs/core'
 import { useState, useSyncExternalStore } from 'react'
+import { Board } from './Board'
 import './App.css'
 
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
@@ -33,11 +34,7 @@ function App() {
           />
         </NavbarGroup>
       </Navbar>
-      <main>
-        <Card>
-          <H1>Workspace</H1>
-        </Card>
-      </main>
+      <Board />
     </div>
   )
 }

@@ -8,3 +8,253 @@
   background-color: var(--bp-palette-dark-gray-1);
   color-scheme: dark;
 }
+
+.board {
+  --lane-background: var(--bp-palette-light-gray-5);
+  --lane-border: var(--bp-palette-light-gray-2);
+  --card-hover: var(--bp-palette-light-gray-5);
+  --card-focus: var(--bp-palette-blue-3);
+  padding: 24px clamp(12px, 3vw, 32px);
+}
+
+.bp6-dark .board {
+  --lane-background: var(--bp-palette-dark-gray-2);
+  --lane-border: var(--bp-palette-dark-gray-4);
+  --card-hover: var(--bp-palette-dark-gray-3);
+  --card-focus: var(--bp-palette-blue-5);
+}
+
+.board-lanes {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(min(230px, 85%), 1fr);
+  align-items: start;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 2px 2px 12px;
+  scroll-snap-type: x proximity;
+}
+
+.board-lane {
+  background: var(--lane-background);
+  border: 1px solid var(--lane-border);
+  border-radius: 8px;
+  padding: 12px;
+  scroll-snap-align: start;
+}
+
+.board-lane header,
+.task-checklist li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.board-lane h2,
+.checklist-heading.bp6-heading {
+  margin: 0;
+  font-size: 16px;
+}
+
+.board-cards,
+.task-checklist {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 10px 0;
+  list-style: none;
+}
+
+.board-card.bp6-card {
+  position: relative;
+  padding: 6px;
+  cursor: grab;
+  user-select: none;
+}
+
+.board-card-title {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: inherit;
+}
+
+.board-card-title::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  content: '';
+}
+
+@media (hover: hover) {
+  .board-card.bp6-card:hover:not(.is-dragging) {
+    background-color: var(--card-hover);
+  }
+}
+
+/* Transfer the title button's focus indicator to the interactive card surface. */
+.board .board-card-title:focus,
+.board .lane-quick-add:focus:not(:focus-visible),
+.board .add-card-trigger:focus:not(:focus-visible),
+.board .board-lanes:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.board-card:has(.board-card-title:focus-visible) {
+  outline: 2px solid var(--card-focus);
+  outline-offset: -2px;
+}
+
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-inline: 6px;
+}
+
+.card-meta:not(:empty) {
+  padding-bottom: 4px;
+}
+
+.add-card,
+.task-metadata-fields {
+  display: flex;
+  gap: 8px;
+}
+
+.add-card > .bp6-input-group,
+.task-metadata-fields > .bp6-form-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-checklist .bp6-checkbox {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.board .bp6-dialog {
+  max-width: calc(100vw - 24px);
+}
+
+@media (max-width: 420px) {
+  .task-metadata-fields {
+    display: block;
+  }
+}
+
+.board-lane {
+  min-height: 116px;
+}
+
+.board-lane.is-drop-lane {
+  border-color: var(--bp-palette-blue-3);
+}
+
+.bp6-dark .board-lane.is-drop-lane {
+  border-color: var(--bp-palette-blue-5);
+}
+
+.board-slot {
+  position: relative;
+}
+
+.board-slot[data-drop]::after {
+  position: absolute;
+  inset-inline: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bp-palette-blue-3);
+  content: '';
+  pointer-events: none;
+}
+
+.bp6-dark .board-slot[data-drop]::after {
+  background: var(--bp-palette-blue-5);
+}
+
+.board-slot[data-drop="before"]::after {
+  top: -5px;
+}
+
+.board-slot[data-drop="after"]::after {
+  bottom: -5px;
+}
+
+.board-card.is-dragging {
+  opacity: 0.45;
+}
+
+.card-composer {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.composer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.board-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .board-lanes {
+    grid-auto-columns: minmax(min(260px, 82%), 82%);
+  }
+
+  .board-card-title,
+  .add-card-trigger.bp6-button {
+    min-height: 44px;
+  }
+}
+
+.lane-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lane-quick-add {
+  flex-shrink: 0;
+}
+
+@media (pointer: coarse) {
+  .lane-quick-add.bp6-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+.add-card-trigger.bp6-button[hidden] {
+  display: none;
+}
+
+.composer-shortcut {
+  margin-inline-start: 4px;
+  font: inherit;
+  font-size: 0.8em;
+  opacity: 0.75;
+}
+
+.board-drag-preview,
+.board-drag-preview .board-card {
+  height: 100%;
+  pointer-events: none;
+}
