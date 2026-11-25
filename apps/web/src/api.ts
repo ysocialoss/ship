@@ -59,7 +59,7 @@ export const projectsApi = {
   setMemberRole: (projectId: string, userId: string, role: ShareRole) =>
     call<{ project: Project }>('PATCH', p(projectId) + '/members/' + userId, { role }),
   removeMember: (projectId: string, userId: string) => call<null>('DELETE', p(projectId) + '/members/' + userId),
-  /** kind is 'tasks' | 'modules' | 'intake'. */
+  /** kind is 'columns' | 'tasks' | 'modules' | 'intake'. */
   createItem: (projectId: string, kind: string, body: object) => call<unknown>('POST', p(projectId) + '/' + kind, body),
   updateItem: (projectId: string, kind: string, id: string, body: object) =>
     call<unknown>('PATCH', p(projectId) + '/' + kind + '/' + id, body),

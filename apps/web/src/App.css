@@ -677,3 +677,51 @@ button.project-invite {
 .workspace-alert {
   margin: 12px 16px 0;
 }
+
+.lane-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.lane-rename {
+  flex: 1;
+  min-width: 0;
+}
+
+.board-add-column.board-lane {
+  background: transparent;
+  border-style: dashed;
+}
+
+@media (pointer: coarse) {
+  .lane-menu.bp6-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+.board-add-column-trigger {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 72px;
+  color: var(--bp-palette-gray-1);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.bp6-dark .board-add-column-trigger {
+  color: var(--bp-palette-gray-4);
+}
+
+.board-add-column-trigger:hover {
+  background: var(--lane-background);
+}
+
+.board-add-column-trigger:focus-visible {
+  outline: 2px solid var(--card-focus);
+  outline-offset: 2px;
+}

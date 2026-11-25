@@ -4,7 +4,17 @@ import { type Request, Router } from 'express';
 import { z } from 'zod';
 import { HttpError, noStore, requireAuth } from '../auth/middleware.ts';
 import { db } from '../db/index.ts';
-import { intakeItems, modules, type Project, projectMembers, projects, tasks, users } from '../db/schema.ts';
+import {
+  boardColumns,
+  defaultBoardColumns,
+  intakeItems,
+  modules,
+  type Project,
+  projectMembers,
+  projects,
+  tasks,
+  users,
+} from '../db/schema.ts';
 
 // ---------------------------------------------------------------------------
 // Validation
@@ -14,7 +24,7 @@ const id = z.uuid();
 const name = z.string().trim().min(1).max(200);
 const description = z.string().max(20_000);
 const role = z.enum(['viewer', 'commenter', 'editor']);
-const column = z.enum(['backlog', 'todo', 'progress', 'review', 'done']);
+const intent = z.enum(['none', 'primary', 'success', 'warning', 'danger']);
 
 /** Clients may pick the id (they create items optimistically); otherwise the database does. */
 const projectCreate = z.object({ id: id.optional(), name, description: description.optional() });
@@ -29,7 +39,7 @@ const memberPatch = z.object({ role });
 
 const checklistItem = z.object({ id: z.string().min(1).max(64), title: z.string().max(500), done: z.boolean() });
 const taskFields = z.object({
-  column,
+  columnId: id,
   position: z.number().int().min(0),
   title: z.string().max(200),
   description,
@@ -41,8 +51,14 @@ const taskFields = z.object({
   moduleId: z.union([id, z.literal(''), z.null()]).transform((v) => v || null),
   checklist: z.array(checklistItem).max(500),
 });
-const taskCreate = taskFields.partial().extend({ id: id.optional(), title: taskFields.shape.title });
+const taskCreate = taskFields
+  .partial()
+  .extend({ id: id.optional(), title: taskFields.shape.title, columnId: taskFields.shape.columnId });
 const taskPatch = taskFields.partial();
+
+const columnFields = z.object({ title: z.string().trim().min(1).max(100), intent, position: z.number().int().min(0) });
+const columnCreate = columnFields.partial({ intent: true, position: true }).extend({ id: id.optional() });
+const columnPatch = columnFields.partial();
 
 const moduleCreate = z.object({ id: id.optional(), name, description: description.optional() });
 const modulePatch = z.object({ name, description }).partial();
@@ -110,6 +126,15 @@ async function assertModuleInProject(projectId: string, moduleId: string | null 
     .from(modules)
     .where(and(eq(modules.id, moduleId), eq(modules.projectId, projectId)));
   if (!found) throw new HttpError(400, 'Module does not belong to this project');
+}
+
+async function assertColumnInProject(projectId: string, columnId: string | undefined) {
+  if (!columnId) return;
+  const [found] = await db
+    .select({ id: boardColumns.id })
+    .from(boardColumns)
+    .where(and(eq(boardColumns.id, columnId), eq(boardColumns.projectId, projectId)));
+  if (!found) throw new HttpError(400, 'Column does not belong to this project');
 }
 
 /** Only people who can open the project (owner or accepted member) can be assigned. */
@@ -218,7 +243,15 @@ projectsRouter.get('/', async (req, res) => {
 
 projectsRouter.post('/', async (req, res) => {
   const body = projectCreate.parse(req.body);
-  const [project] = await insertOnce(() => db.insert(projects).values({ ...body, ownerId: userId(req) }).returning());
+  const project = await insertOnce(() =>
+    db.transaction(async (tx) => {
+      const [created] = await tx.insert(projects).values({ ...body, ownerId: userId(req) }).returning();
+      await tx
+        .insert(boardColumns)
+        .values(defaultBoardColumns.map((c, position) => ({ ...c, position, projectId: created!.id })));
+      return created;
+    }),
+  );
   res.status(201).json({ project: await serializeProject(project!, 'owner') });
 });
 
@@ -251,14 +284,19 @@ projectsRouter.post('/:projectId/invite/decline', async (req, res) => {
 /** Project plus all of its data (tasks, modules, intake), matching the client's ProjectData. */
 projectsRouter.get('/:projectId', async (req, res) => {
   const { project, role } = await projectAccess(req, 'read');
-  const [taskRows, moduleRows, intakeRows] = await Promise.all([
+  const [columnRows, taskRows, moduleRows, intakeRows] = await Promise.all([
+    db
+      .select()
+      .from(boardColumns)
+      .where(eq(boardColumns.projectId, project.id))
+      .orderBy(asc(boardColumns.position), asc(boardColumns.createdAt)),
     db.select().from(tasks).where(eq(tasks.projectId, project.id)).orderBy(asc(tasks.position), asc(tasks.createdAt)),
     db.select().from(modules).where(eq(modules.projectId, project.id)).orderBy(asc(modules.createdAt)),
     db.select().from(intakeItems).where(eq(intakeItems.projectId, project.id)).orderBy(asc(intakeItems.createdAt)),
   ]);
   res.json({
     project: await serializeProject(project, role),
-    data: { tasks: taskRows.map(serializeTask), modules: moduleRows, intake: intakeRows },
+    data: { columns: columnRows, tasks: taskRows.map(serializeTask), modules: moduleRows, intake: intakeRows },
   });
 });
 
@@ -332,11 +370,60 @@ projectsRouter.delete('/:projectId/members/:userId', async (req, res) => {
   res.status(204).end();
 });
 
+// Board columns -------------------------------------------------------------
+
+projectsRouter.post('/:projectId/columns', async (req, res) => {
+  const { project } = await projectAccess(req, 'edit');
+  const body = columnCreate.parse(req.body);
+  const [column] = await insertOnce(() => db.insert(boardColumns).values({ ...body, projectId: project.id }).returning());
+  res.status(201).json({ column });
+});
+
+projectsRouter.patch('/:projectId/columns/:itemId', async (req, res) => {
+  const { project } = await projectAccess(req, 'edit');
+  const body = columnPatch.parse(req.body);
+  const rows = await db
+    .update(boardColumns)
+    .set(body)
+    .where(and(eq(boardColumns.id, paramId(req, 'itemId')), eq(boardColumns.projectId, project.id)))
+    .returning();
+  res.json({ column: one(rows, 'Column') });
+});
+
+/** Refused while the column still holds work items, and for a project's last column. */
+projectsRouter.delete('/:projectId/columns/:itemId', async (req, res) => {
+  const { project } = await projectAccess(req, 'edit');
+  const columnId = paramId(req, 'itemId');
+  await db.transaction(async (tx) => {
+    const [held] = await tx
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.projectId, project.id), eq(tasks.columnId, columnId)))
+      .limit(1);
+    if (held) throw new HttpError(409, 'Move the work items out of this column first');
+    const others = await tx
+      .select({ id: boardColumns.id })
+      .from(boardColumns)
+      .where(and(eq(boardColumns.projectId, project.id), ne(boardColumns.id, columnId)))
+      .limit(1);
+    if (!others.length) throw new HttpError(409, 'A board needs at least one column');
+    one(
+      await tx
+        .delete(boardColumns)
+        .where(and(eq(boardColumns.id, columnId), eq(boardColumns.projectId, project.id)))
+        .returning({ id: boardColumns.id }),
+      'Column',
+    );
+  });
+  res.status(204).end();
+});
+
 // Tasks ---------------------------------------------------------------------
 
 projectsRouter.post('/:projectId/tasks', async (req, res) => {
   const { project } = await projectAccess(req, 'edit');
   const body = taskCreate.parse(req.body);
+  await assertColumnInProject(project.id, body.columnId);
   await assertModuleInProject(project.id, body.moduleId);
   await assertAssignable(project, body.assigneeId);
   const [task] = await insertOnce(() => db.insert(tasks).values({ ...body, projectId: project.id }).returning());
@@ -346,6 +433,7 @@ projectsRouter.post('/:projectId/tasks', async (req, res) => {
 projectsRouter.patch('/:projectId/tasks/:itemId', async (req, res) => {
   const { project } = await projectAccess(req, 'edit');
   const body = taskPatch.parse(req.body);
+  await assertColumnInProject(project.id, body.columnId);
   await assertModuleInProject(project.id, body.moduleId);
   await assertAssignable(project, body.assigneeId);
   const rows = await db

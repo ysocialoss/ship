@@ -337,10 +337,12 @@ function App({ user, onLogout, onUserChange }: { user: User; onLogout: () => voi
           ) : projectRoute && activeData ? (
             projectRoute.view === 'work-items' ? (
               <Board
+                columns={activeData.columns}
                 tasks={activeData.tasks}
                 modules={activeData.modules}
                 people={activeProject ? assignablePeople(activeProject) : []}
-                onTasksChange={(tasks) => updateProjectData({ ...activeData, tasks })}
+                editable={activeProject ? canEdit(activeProject) : false}
+                onChange={(changes) => updateProjectData({ ...activeData, ...changes })}
               />
             ) : projectRoute.view === 'modules' ? (
               <ModulesView data={activeData} onChange={updateProjectData} />

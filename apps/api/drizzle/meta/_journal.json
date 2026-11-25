@@ -29,6 +29,13 @@
       "when": 1795597796766,
       "tag": "0003_drop_task_assignee_text",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795625379890,
+      "tag": "0004_board_columns",
+      "breakpoints": true
     }
   ]
 }

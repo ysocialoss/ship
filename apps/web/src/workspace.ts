@@ -1,5 +1,5 @@
 import { projectsApi } from './api'
-import type { ColumnId } from './boardColumns'
+import type { BoardColumn } from './boardColumns'
 
 export interface ChecklistItem {
   id: string
@@ -9,7 +9,8 @@ export interface ChecklistItem {
 
 export interface Task {
   id: string
-  column: ColumnId
+  /** Id of the board column holding this work item. */
+  columnId: string
   title: string
   description: string
   labels: string
@@ -71,13 +72,14 @@ export interface Invite {
 
 /** Everything that belongs to a single project. */
 export interface ProjectData {
+  columns: BoardColumn[]
   tasks: Task[]
   modules: Module[]
   intake: IntakeItem[]
 }
 
 export function emptyProjectData(): ProjectData {
-  return { tasks: [], modules: [], intake: [] }
+  return { columns: [], tasks: [], modules: [], intake: [] }
 }
 
 export interface Assignable {
@@ -101,13 +103,14 @@ export const canEdit = (project: Project) => project.myRole === 'owner' || proje
 // Syncing: components hand over whole ProjectData snapshots; send only what changed.
 // ---------------------------------------------------------------------------
 
-type Kind = 'tasks' | 'modules' | 'intake'
+type Kind = 'columns' | 'tasks' | 'modules' | 'intake'
 type Op =
   | { type: 'create'; kind: Kind; body: object }
   | { type: 'update'; kind: Kind; id: string; body: object }
   | { type: 'remove'; kind: Kind; id: string }
 
-const taskFields = ['column', 'title', 'description', 'labels', 'assigneeId', 'dueDate', 'moduleId', 'checklist'] as const
+const columnFields = ['title', 'intent'] as const
+const taskFields = ['columnId', 'title', 'description', 'labels', 'assigneeId', 'dueDate', 'moduleId', 'checklist'] as const
 const moduleFields = ['name', 'description'] as const
 const intakeFields = ['title', 'description'] as const
 
@@ -146,14 +149,24 @@ function diffList<T extends { id: string }>(
   return { creates, updates, removes }
 }
 
-/** Ordered so references hold: modules exist before tasks use them; tasks leave before modules go. */
+const position = (_: unknown, index: number) => ({ position: index })
+const moved = (_: unknown, index: number, __: unknown, oldIndex: number) => (index !== oldIndex ? { position: index } : {})
+
+/**
+ * Ordered so references hold: columns and modules exist before tasks use them; tasks move or
+ * leave before the columns and modules they were in go.
+ */
 export function diffProjectData(prev: ProjectData, next: ProjectData): Op[] {
-  const position = (_: Task, index: number) => ({ position: index })
-  const moved = (_: Task, index: number, __: Task, oldIndex: number) => (index !== oldIndex ? { position: index } : {})
+  const c = diffList('columns', prev.columns, next.columns, columnFields, position, moved)
   const m = diffList('modules', prev.modules, next.modules, moduleFields)
   const t = diffList('tasks', prev.tasks, next.tasks, taskFields, position, moved)
   const i = diffList('intake', prev.intake, next.intake, intakeFields)
-  return [...m.creates, ...m.updates, ...t.creates, ...t.updates, ...t.removes, ...m.removes, ...i.creates, ...i.updates, ...i.removes]
+  return [
+    ...c.creates, ...c.updates, ...m.creates, ...m.updates,
+    ...t.creates, ...t.updates, ...t.removes,
+    ...m.removes, ...c.removes,
+    ...i.creates, ...i.updates, ...i.removes,
+  ]
 }
 
 export async function applyOps(projectId: string, ops: Op[]): Promise<void> {
@@ -170,10 +183,15 @@ export async function applyOps(projectId: string, ops: Op[]): Promise<void> {
 
 const legacyKey = 'ship.workspace.v1'
 
+type LegacyTask = Omit<Task, 'columnId'> & { column?: string }
+
 interface LegacyWorkspace {
   projects: { id: string; name: string; description?: string }[]
-  data: Record<string, ProjectData>
+  data: Record<string, Omit<ProjectData, 'columns' | 'tasks'> & { tasks: LegacyTask[] }>
 }
+
+/** Order of the built-in columns before boards had their own; new projects start with the same five. */
+const legacyColumns = ['backlog', 'todo', 'progress', 'review', 'done']
 
 /** Uploads local projects once, then removes them from the browser. Returns true if anything was imported. */
 export async function importLocalWorkspace(): Promise<boolean> {
@@ -193,10 +211,20 @@ export async function importLocalWorkspace(): Promise<boolean> {
     // A previous partial import may already have created it.
     await projectsApi.create({ id: project.id, name: project.name, description: project.description ?? '' }).catch(() => {})
     const data = legacy.data?.[project.id] ?? emptyProjectData()
-    await applyOps(project.id, diffProjectData(emptyProjectData(), {
+    const server = await projectsApi.get(project.id).catch(() => null)
+    const columns = server?.data.columns ?? []
+    if (!columns.length) continue
+    const base = { ...emptyProjectData(), columns }
+    await applyOps(project.id, diffProjectData(base, {
       ...data,
-      // Free-text assignees from before can't be matched to accounts, so they are dropped.
-      tasks: data.tasks.map((task) => ({ ...task, moduleId: task.moduleId ?? '', assigneeId: '' })),
+      columns,
+      tasks: data.tasks.map(({ column, ...task }) => ({
+        ...task,
+        columnId: (columns[legacyColumns.indexOf(column ?? '')] ?? columns[0]!).id,
+        moduleId: task.moduleId ?? '',
+        // Free-text assignees from before can't be matched to accounts, so they are dropped.
+        assigneeId: '',
+      })),
     })).catch(() => {})
   }
   try {

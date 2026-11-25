@@ -78,7 +78,7 @@ export const recoveryCodes = pgTable(
   ],
 );
 
-export const boardColumn = pgEnum('board_column', ['backlog', 'todo', 'progress', 'review', 'done']);
+export const columnIntent = pgEnum('column_intent', ['none', 'primary', 'success', 'warning', 'danger']);
 export const shareRole = pgEnum('share_role', ['viewer', 'commenter', 'editor']);
 export const linkAccess = pgEnum('link_access', ['restricted', 'anyone']);
 
@@ -132,6 +132,31 @@ export const modules = pgTable(
   (t) => [index('modules_project_id_idx').on(t.projectId)],
 );
 
+/** The columns ("holders") on a project's Work Items board, in position order. */
+export const boardColumns = pgTable(
+  'board_columns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    intent: columnIntent('intent').notNull().default('none'),
+    position: integer('position').notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [index('board_columns_project_id_idx').on(t.projectId)],
+);
+
+/** What a new project starts with. */
+export const defaultBoardColumns = [
+  { title: 'Backlog', intent: 'none' },
+  { title: 'To do', intent: 'none' },
+  { title: 'In progress', intent: 'primary' },
+  { title: 'In review', intent: 'warning' },
+  { title: 'Done', intent: 'success' },
+] as const;
+
 export type ChecklistItem = { id: string; title: string; done: boolean };
 
 export const tasks = pgTable(
@@ -141,7 +166,10 @@ export const tasks = pgTable(
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
-    column: boardColumn('column').notNull().default('backlog'),
+    /** Deleting a column that still holds tasks is refused; move them out first. */
+    columnId: uuid('column_id')
+      .notNull()
+      .references(() => boardColumns.id, { onDelete: 'restrict' }),
     position: integer('position').notNull().default(0),
     title: text('title').notNull(),
     description: text('description').notNull().default(''),
@@ -154,7 +182,11 @@ export const tasks = pgTable(
     checklist: jsonb('checklist').$type<ChecklistItem[]>().notNull().default([]),
     ...timestamps,
   },
-  (t) => [index('tasks_project_id_idx').on(t.projectId), index('tasks_assignee_id_idx').on(t.assigneeId)],
+  (t) => [
+    index('tasks_project_id_idx').on(t.projectId),
+    index('tasks_assignee_id_idx').on(t.assigneeId),
+    index('tasks_column_id_idx').on(t.columnId),
+  ],
 );
 
 export const intakeItems = pgTable(

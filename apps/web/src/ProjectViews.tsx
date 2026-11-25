@@ -252,9 +252,11 @@ export function IntakeView({ data, onChange }: ProjectViewProps) {
   }
 
   function accept(item: IntakeItem) {
+    const firstColumn = data.columns[0]
+    if (!firstColumn) return
     const task: Task = {
       id: crypto.randomUUID(),
-      column: 'backlog',
+      columnId: firstColumn.id,
       title: item.title,
       description: item.description,
       labels: '',
@@ -290,7 +292,7 @@ export function IntakeView({ data, onChange }: ProjectViewProps) {
               <H2>{item.title}</H2>
               {item.description && <p>{item.description}</p>}
               <div className="composer-actions">
-                <Button intent="primary" onClick={() => accept(item)}>Accept to backlog</Button>
+                <Button intent="primary" disabled={!data.columns[0]} onClick={() => accept(item)}>Accept to {data.columns[0]?.title ?? 'board'}</Button>
                 <Button variant="minimal" onClick={() => decline(item.id)}>Decline</Button>
               </div>
             </Card>

@@ -1,8 +1,10 @@
 import {
-  Button, Card, Checkbox, Dialog, DialogBody, FormGroup, H1, H2,
+  Button, Card, Checkbox, Dialog, DialogBody, DialogFooter, FormGroup, H1, H2, Icon,
   InputGroup, Tag, TextArea,
 } from '@blueprintjs/core'
 import { Dropdown } from './Dropdown'
+import { MenuSelect } from './MenuSelect'
+import type { MenuEntry } from './MenuSelect'
 import {
   DndContext, DragOverlay, MouseSensor, TouchSensor, pointerWithin,
   useDraggable, useDroppable, useSensor, useSensors,
@@ -10,8 +12,8 @@ import {
 import type { CollisionDetection, DragEndEvent, DragMoveEvent } from '@dnd-kit/core'
 import { lazy, Suspense, useLayoutEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { columns } from './boardColumns'
-import type { ColumnId } from './boardColumns'
+import { columnColors, columnIcon } from './boardColumns'
+import type { BoardColumn } from './boardColumns'
 import type { Assignable, Module, Task } from './workspace'
 
 const DateInput = lazy(async () => {
@@ -20,65 +22,106 @@ const DateInput = lazy(async () => {
 })
 
 interface DropTarget {
-  column: ColumnId
+  column: string
   cardId?: string
   after: boolean
 }
 
-const detectCollision: CollisionDetection = (args) => {
-  const hits = pointerWithin(args)
-  const card = hits.find(({ id }) => !columns.some((column) => column.id === id))
-  return card ? [card] : hits
-}
-
-export function Board({ tasks, modules, people, onTasksChange }: {
+export function Board({ columns, tasks, modules, people, editable, onChange }: {
+  columns: BoardColumn[]
   tasks: Task[]
   modules: Module[]
   /** Who work items can be assigned to. */
   people: Assignable[]
-  onTasksChange: (tasks: Task[]) => void
+  /** Whether the current user may change the board's columns. */
+  editable: boolean
+  onChange: (changes: { columns?: BoardColumn[]; tasks?: Task[] }) => void
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const [announcement, setAnnouncement] = useState('')
   const selected = tasks.find((task) => task.id === selectedId)
   const dragged = tasks.find((task) => task.id === draggedId)
-  const draggedColumn = columns.find((column) => column.id === dragged?.column)
+  const draggedColumn = columns.find((column) => column.id === dragged?.columnId)
+  const deleting = columns.find((column) => column.id === deletingId)
+
+  const detectCollision: CollisionDetection = (args) => {
+    const hits = pointerWithin(args)
+    const card = hits.find(({ id }) => !columns.some((column) => column.id === id))
+    return card ? [card] : hits
+  }
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }),
   )
 
   function saveTasks(next: Task[]) {
-    onTasksChange(next)
+    onChange({ tasks: next })
   }
 
-  function addTask(column: ColumnId, title: string) {
+  const columnTitle = (id: string) => columns.find((entry) => entry.id === id)?.title
+
+  function addColumn(title: string) {
+    onChange({ columns: [...columns, { id: crypto.randomUUID(), title, intent: 'none' }] })
+    setAnnouncement('Column ' + title + ' added')
+  }
+
+  function updateColumn(id: string, changes: Partial<Omit<BoardColumn, 'id'>>) {
+    onChange({ columns: columns.map((column) => column.id === id ? { ...column, ...changes } : column) })
+  }
+
+  function shiftColumn(id: string, by: -1 | 1) {
+    const from = columns.findIndex((column) => column.id === id)
+    const to = from + by
+    if (from < 0 || to < 0 || to >= columns.length) return
+    const next = [...columns]
+    const [column] = next.splice(from, 1)
+    next.splice(to, 0, column!)
+    onChange({ columns: next })
+    setAnnouncement(column!.title + ' moved ' + (by < 0 ? 'left' : 'right'))
+  }
+
+  /** Removes a column; its work items go to moveTo, keeping their order. */
+  function removeColumn(id: string, moveTo?: string) {
+    const removed = columns.find((column) => column.id === id)
+    if (!removed || columns.length < 2) return
+    const held = tasks.filter((task) => task.columnId === id)
+    if (held.length && !moveTo) return
+    const nextTasks = held.length
+      ? [...tasks.filter((task) => task.columnId !== id), ...held.map((task) => ({ ...task, columnId: moveTo! }))]
+      : tasks
+    onChange({ columns: columns.filter((column) => column.id !== id), tasks: nextTasks })
+    setAnnouncement('Column ' + removed.title + ' deleted'
+      + (held.length ? ', ' + held.length + (held.length === 1 ? ' card' : ' cards') + ' moved to ' + columnTitle(moveTo!) : ''))
+  }
+
+  function addTask(columnId: string, title: string) {
     const task: Task = {
-      id: crypto.randomUUID(), column, title,
+      id: crypto.randomUUID(), columnId, title,
       description: '', labels: '', assigneeId: '', dueDate: '', moduleId: '', checklist: [],
     }
     saveTasks([...tasks, task])
-    setAnnouncement(title + ' added to ' + columns.find((entry) => entry.id === column)?.title)
+    setAnnouncement(title + ' added to ' + columnTitle(columnId))
   }
 
-  function updateTask(id: string, changes: Partial<Omit<Task, 'id' | 'column'>>) {
+  function updateTask(id: string, changes: Partial<Omit<Task, 'id' | 'columnId'>>) {
     saveTasks(tasks.map((task) => task.id === id ? { ...task, ...changes } : task))
   }
 
-  function moveTask(id: string, column: ColumnId, targetId?: string, placeAfter = false) {
+  function moveTask(id: string, column: string, targetId?: string, placeAfter = false) {
     if (id === targetId) return
 
     const task = tasks.find((item) => item.id === id)
     if (!task) return
 
     const next = tasks.filter((item) => item.id !== id)
-    const index = next.findIndex((item) => item.id === targetId && item.column === column)
+    const index = next.findIndex((item) => item.id === targetId && item.columnId === column)
     const offset = placeAfter ? 1 : 0
-    next.splice(index < 0 ? next.length : index + offset, 0, { ...task, column })
+    next.splice(index < 0 ? next.length : index + offset, 0, { ...task, columnId: column })
     saveTasks(next)
-    setAnnouncement(task.title + ' moved to ' + columns.find((entry) => entry.id === column)?.title)
+    setAnnouncement(task.title + ' moved to ' + columnTitle(column))
   }
 
   function getDropTarget({ active, over }: DragMoveEvent): DropTarget | null {
@@ -92,7 +135,7 @@ export function Board({ tasks, modules, people, onTasksChange }: {
     if (!card || !translated) return null
 
     const after = translated.top + translated.height / 2 > over.rect.top + over.rect.height / 2
-    return { column: card.column, cardId: card.id, after }
+    return { column: card.columnId, cardId: card.id, after }
   }
 
   function previewDrop(event: DragMoveEvent) {
@@ -130,12 +173,25 @@ export function Board({ tasks, modules, people, onTasksChange }: {
         onDragEnd={finishDrag}
       >
         <div className="board-lanes" role="region" aria-label="Kanban columns">
-          {columns.map((column) => {
-            const cards = tasks.filter((task) => task.column === column.id)
+          {columns.map((column, index) => {
+            const cards = tasks.filter((task) => task.columnId === column.id)
 
             return (
               <DropLane key={column.id} id={column.id} highlighted={dropTarget?.column === column.id}>
-                <LaneContent column={column} count={cards.length} onAdd={(title) => addTask(column.id, title)}>
+                <LaneContent
+                  column={column}
+                  count={cards.length}
+                  onAdd={(title) => addTask(column.id, title)}
+                  manage={editable ? {
+                    isFirst: index === 0,
+                    isLast: index === columns.length - 1,
+                    isOnly: columns.length === 1,
+                    onRename: (title) => updateColumn(column.id, { title }),
+                    onColor: (intent) => updateColumn(column.id, { intent }),
+                    onShift: (by) => shiftColumn(column.id, by),
+                    onDelete: () => (cards.length ? setDeletingId(column.id) : removeColumn(column.id)),
+                  } : undefined}
+                >
                   <ul className="board-cards">
                     {cards.map((task) => {
                       const marker = dropTarget?.cardId === task.id && draggedId !== task.id
@@ -152,6 +208,7 @@ export function Board({ tasks, modules, people, onTasksChange }: {
               </DropLane>
             )
           })}
+          {editable && <AddColumn onAdd={addColumn} />}
         </div>
         <DragOverlay>
           {dragged && draggedColumn && (
@@ -168,6 +225,7 @@ export function Board({ tasks, modules, people, onTasksChange }: {
           <TaskDetails
             key={selected.id}
             task={selected}
+            columns={columns}
             modules={modules}
             people={people}
             onChange={(changes) => updateTask(selected.id, changes)}
@@ -175,12 +233,103 @@ export function Board({ tasks, modules, people, onTasksChange }: {
           />
         )}
       </Dialog>
+      {deleting && (
+        <DeleteColumnDialog
+          key={deleting.id}
+          column={deleting}
+          others={columns.filter((column) => column.id !== deleting.id)}
+          count={tasks.filter((task) => task.columnId === deleting.id).length}
+          onCancel={() => setDeletingId(null)}
+          onConfirm={(moveTo) => {
+            removeColumn(deleting.id, moveTo)
+            setDeletingId(null)
+          }}
+        />
+      )}
     </main>
   )
 }
 
+function DeleteColumnDialog({ column, others, count, onCancel, onConfirm }: {
+  column: BoardColumn
+  others: BoardColumn[]
+  count: number
+  onCancel: () => void
+  onConfirm: (moveTo: string) => void
+}) {
+  const [moveTo, setMoveTo] = useState(others[0]?.id ?? '')
+  return (
+    <Dialog isOpen usePortal={false} icon="trash" title={'Delete ' + column.title + '?'} onClose={onCancel}>
+      <DialogBody>
+        <p>
+          <strong>{column.title}</strong> holds {count} {count === 1 ? 'card' : 'cards'}.
+          Choose where {count === 1 ? 'it goes' : 'they go'} before the column is deleted.
+        </p>
+        <FormGroup label="Move cards to" labelFor="delete-column-target">
+          <Dropdown
+            id="delete-column-target"
+            fill
+            value={moveTo}
+            options={others.map(({ id, title }) => ({ value: id, label: title }))}
+            onChange={setMoveTo}
+          />
+        </FormGroup>
+      </DialogBody>
+      <DialogFooter actions={<>
+        <Button onClick={onCancel}>Cancel</Button>
+        <Button intent="danger" disabled={!moveTo} onClick={() => onConfirm(moveTo)}>Delete column</Button>
+      </>} />
+    </Dialog>
+  )
+}
+
+function AddColumn({ onAdd }: { onAdd: (title: string) => void }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [title, setTitle] = useState('')
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!title.trim()) return
+    onAdd(title.trim())
+    setTitle('')
+  }
+
+  function close() {
+    setIsOpen(false)
+    setTitle('')
+  }
+
+  if (!isOpen) {
+    return (
+      <button type="button" className="board-lane board-add-column board-add-column-trigger" onClick={() => setIsOpen(true)}>
+        <Icon icon="plus" />
+        Add column
+      </button>
+    )
+  }
+
+  return (
+    <section className="board-lane board-add-column" aria-label="Add column">
+      <form className="card-composer" onSubmit={submit} onKeyDown={(event) => { if (event.key === 'Escape') close() }}>
+        <InputGroup
+          autoFocus
+          aria-label="New column name"
+          placeholder="Column name"
+          maxLength={100}
+          value={title}
+          onChange={(event) => setTitle(event.currentTarget.value)}
+        />
+        <div className="composer-actions">
+          <Button type="submit" intent="primary" disabled={!title.trim()}>Add column</Button>
+          <Button variant="minimal" onClick={close}>Cancel</Button>
+        </div>
+      </form>
+    </section>
+  )
+}
+
 function DropLane({ id, highlighted, children }: {
-  id: ColumnId
+  id: string
   highlighted: boolean
   children: ReactNode
 }) {
@@ -218,7 +367,7 @@ function DragCard({ id, marker, children }: {
 function CardContent({ task, column, people, onOpen }: {
   people: Assignable[]
   task: Task
-  column: (typeof columns)[number]
+  column: BoardColumn
   onOpen?: () => void
 }) {
   const title = task.title.trim() || 'Untitled card'
@@ -234,7 +383,7 @@ function CardContent({ task, column, people, onOpen }: {
         <span className="board-card-title">{title}</span>
       )}
       <div className="card-meta">
-        <Tag icon={column.icon} intent={column.intent} minimal>{column.title}</Tag>
+        <Tag icon={columnIcon[column.intent]} intent={column.intent} minimal>{column.title}</Tag>
         {labels.map((label) => <Tag key={label} intent="primary" minimal>{label}</Tag>)}
         {assignee && <Tag minimal icon="person">@{assignee.username}</Tag>}
         {task.dueDate && <Tag minimal>Due {task.dueDate}</Tag>}
@@ -250,14 +399,58 @@ function CardContent({ task, column, people, onOpen }: {
   )
 }
 
-function LaneContent({ column, count, onAdd, children }: {
-  column: (typeof columns)[number]
+interface LaneManagement {
+  isFirst: boolean
+  isLast: boolean
+  isOnly: boolean
+  onRename: (title: string) => void
+  onColor: (intent: BoardColumn['intent']) => void
+  onShift: (by: -1 | 1) => void
+  onDelete: () => void
+}
+
+function LaneContent({ column, count, onAdd, manage, children }: {
+  column: BoardColumn
   count: number
   onAdd: (title: string) => void
+  /** Column actions; absent for people who can't edit the board. */
+  manage?: LaneManagement
   children: ReactNode
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [title, setTitle] = useState('')
+  const [renaming, setRenaming] = useState(false)
+  const [name, setName] = useState(column.title)
+  const menuButton = useRef<HTMLButtonElement>(null)
+  // The menu hands focus back to its button as it closes, which would blur the rename field at once.
+  const renameRequested = useRef(false)
+
+  function startRename() {
+    setName(column.title)
+    setRenaming(true)
+  }
+
+  function finishRename(save: boolean) {
+    if (!renaming) return
+    const trimmed = name.trim()
+    if (save && trimmed && trimmed !== column.title) manage?.onRename(trimmed)
+    setRenaming(false)
+    menuButton.current?.focus()
+  }
+
+  const menu: MenuEntry[] = manage ? [
+    { id: 'rename', text: 'Rename', icon: 'edit', onSelect: () => { renameRequested.current = true } },
+    ...(manage.isFirst ? [] : [{ id: 'left', text: 'Move left', icon: 'arrow-left' as const, onSelect: () => manage.onShift(-1) }]),
+    ...(manage.isLast ? [] : [{ id: 'right', text: 'Move right', icon: 'arrow-right' as const, onSelect: () => manage.onShift(1) }]),
+    ...columnColors.map(({ intent, label }, index) => ({
+      id: 'color-' + intent,
+      text: label,
+      selected: column.intent === intent,
+      dividerTitle: index === 0 ? 'Color' : undefined,
+      onSelect: () => manage.onColor(intent),
+    })),
+    ...(manage.isOnly ? [] : [{ id: 'delete', text: 'Delete column', icon: 'trash' as const, dividerBefore: true, onSelect: manage.onDelete }]),
+  ] : []
   const trigger = useRef<HTMLElement | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const composerId = column.id + '-composer'
@@ -294,11 +487,52 @@ function LaneContent({ column, count, onAdd, children }: {
   return (
     <>
       <header className="lane-header">
-        <div className="lane-title">
-          <H2 id={column.id + '-heading'}>{column.title}</H2>
-          <Tag minimal aria-label={count + (count === 1 ? ' card' : ' cards')}>{count}</Tag>
-        </div>
-        <Button
+        {renaming ? (
+          <form
+            className="lane-rename"
+            onSubmit={(event) => { event.preventDefault(); finishRename(true) }}
+            onKeyDown={(event) => { if (event.key === 'Escape') finishRename(false) }}
+          >
+            <InputGroup
+              autoFocus
+              size="small"
+              aria-label={'Rename column ' + column.title}
+              maxLength={100}
+              value={name}
+              onFocus={(event) => event.currentTarget.select()}
+              onChange={(event) => setName(event.currentTarget.value)}
+              onBlur={() => finishRename(true)}
+            />
+          </form>
+        ) : (
+          <div className="lane-title">
+            <H2 id={column.id + '-heading'} onDoubleClick={manage ? startRename : undefined}>{column.title}</H2>
+            <Tag minimal aria-label={count + (count === 1 ? ' card' : ' cards')}>{count}</Tag>
+          </div>
+        )}
+        <div className="lane-actions">
+          {manage && (
+            <MenuSelect
+              entries={menu}
+              label={column.title + ' column options'}
+              placement="bottom-end"
+              onClosed={() => {
+                if (!renameRequested.current) return
+                renameRequested.current = false
+                startRename()
+              }}
+            >
+              <Button
+                ref={menuButton}
+                className="lane-menu"
+                variant="minimal"
+                size="small"
+                icon="more"
+                aria-label={column.title + ' column options'}
+              />
+            </MenuSelect>
+          )}
+          <Button
           className="lane-quick-add"
           variant="minimal"
           size="small"
@@ -307,7 +541,8 @@ function LaneContent({ column, count, onAdd, children }: {
           aria-expanded={isOpen}
           aria-controls={isOpen ? composerId : undefined}
           onClick={(event) => open(event.currentTarget)}
-        />
+          />
+        </div>
       </header>
       {children}
       <Button
@@ -345,17 +580,18 @@ function LaneContent({ column, count, onAdd, children }: {
             <Button type="submit" intent="primary" disabled={!title.trim()} aria-keyshortcuts="Enter">Add card <kbd className="composer-shortcut" aria-hidden="true">Enter</kbd></Button>
             <Button variant="minimal" onClick={close} aria-keyshortcuts="Escape">Cancel <kbd className="composer-shortcut" aria-hidden="true">Esc</kbd></Button>
           </div>
-        </form>
+      </form>
       )}
     </>
   )
 }
-function TaskDetails({ task, modules, people, onChange, onMove }: {
+function TaskDetails({ task, columns, modules, people, onChange, onMove }: {
   task: Task
+  columns: BoardColumn[]
   modules: Module[]
   people: Assignable[]
-  onChange: (changes: Partial<Omit<Task, 'id' | 'column'>>) => void
-  onMove: (column: ColumnId) => void
+  onChange: (changes: Partial<Omit<Task, 'id' | 'columnId'>>) => void
+  onMove: (column: string) => void
 }) {
   const [itemTitle, setItemTitle] = useState('')
 
@@ -374,7 +610,7 @@ function TaskDetails({ task, modules, people, onChange, onMove }: {
       <FormGroup label="Move to" labelFor="task-column">
         <Dropdown
           id="task-column"
-          value={task.column}
+          value={task.columnId}
           options={columns.map(({ id, title }) => ({ value: id, label: title }))}
           onChange={(value) => {
             const column = columns.find(({ id }) => id === value)

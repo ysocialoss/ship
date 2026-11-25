@@ -21,11 +21,13 @@ interface MenuSelectProps {
   label: string
   placement?: Placement
   fill?: boolean
+  /** Called once the menu has finished closing and focus is back on its trigger. */
+  onClosed?: () => void
   children: ReactNode
 }
 
 /** Blueprint Select used as a menu: entries are either choices (with a tick) or actions. */
-export function MenuSelect({ entries, label, placement = 'bottom-start', fill, children }: MenuSelectProps) {
+export function MenuSelect({ entries, label, placement = 'bottom-start', fill, onClosed, children }: MenuSelectProps) {
   // Select pre-highlights the first item on open; only show the highlight once the user uses the keyboard.
   const [keyboardNav, setKeyboardNav] = useState(false)
   return (
@@ -33,7 +35,7 @@ export function MenuSelect({ entries, label, placement = 'bottom-start', fill, c
       items={entries}
       filterable={false}
       fill={fill}
-      popoverProps={{ placement, onClosed: () => setKeyboardNav(false) }}
+      popoverProps={{ placement, onClosed: () => { setKeyboardNav(false); onClosed?.() } }}
       popoverContentProps={{ onKeyDown: () => setKeyboardNav(true) }}
       onItemSelect={(entry) => entry.onSelect()}
       itemRenderer={(entry, { handleClick, handleFocus, modifiers }) => (
