@@ -4,6 +4,8 @@ import {
 } from '@blueprintjs/core'
 import { useState, useSyncExternalStore } from 'react'
 import { Board } from './Board'
+import type { User } from './api'
+import { TwoFactorSettings } from './TwoFactorSettings'
 import './App.css'
 
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
@@ -43,7 +45,7 @@ function getActiveView() {
   return sidebarViews.find((view) => '#' + view.id === window.location.hash) ?? sidebarViews[0]
 }
 
-function App() {
+function App({ user, onLogout, onUserChange }: { user: User; onLogout: () => void; onUserChange: (user: User) => void }) {
   const systemDarkMode = useSyncExternalStore(darkPreference.subscribe, darkPreference.getSnapshot)
   const isDesktop = useSyncExternalStore(desktopLayout.subscribe, desktopLayout.getSnapshot)
   const [sidebarOverride, setSidebarOverride] = useState<boolean | null>(null)
@@ -109,15 +111,15 @@ function App() {
                 <button
                   {...targetProps}
                   type="button"
-                  aria-label="Account options for Full Name"
+                  aria-label={`Account options for ${user.username}`}
                   onKeyDown={undefined}
                 >
                   <span className="sidebar-avatar">
                     <Icon icon="person" size={16} aria-hidden="true" />
                   </span>
                   <span className="sidebar-profile-details">
-                    <span className="sidebar-profile-name">Full Name</span>
-                    <span className={Classes.TEXT_MUTED}>@username</span>
+                    <span className="sidebar-profile-name">{user.username}</span>
+                    <span className={Classes.TEXT_MUTED}>@{user.username}</span>
                   </span>
                   <Icon className="sidebar-profile-chevron" icon="chevron-down" size={12} aria-hidden="true" />
                 </button>
@@ -145,7 +147,7 @@ function App() {
                     />
                   ))}
                   <MenuDivider />
-                  <MenuItem icon="log-out" text="Log out" disabled />
+                  <MenuItem icon="log-out" text="Log out" onClick={onLogout} />
                 </Menu>
               }
             />
@@ -162,8 +164,11 @@ function App() {
       </div>
       <Dialog isOpen={profileOpen} onClose={() => setProfileOpen(false)} title="Profile" usePortal={false}>
         <DialogBody>
-          <p><strong>Full Name</strong></p>
-          <p className={Classes.TEXT_MUTED}>@username</p>
+          <div className="profile-summary">
+            <strong>{user.username}</strong>
+            <span className={Classes.TEXT_MUTED}>@{user.username}</span>
+          </div>
+          <TwoFactorSettings user={user} onUserChange={onUserChange} />
         </DialogBody>
       </Dialog>
     </div>
