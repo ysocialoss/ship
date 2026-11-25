@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import { z } from 'zod';
 import { checkOrigin, HttpError } from './src/auth/middleware.ts';
 import { authRouter } from './src/auth/routes.ts';
+import { projectsRouter, usersRouter } from './src/projects/routes.ts';
 import { deleteExpiredSessions } from './src/auth/session.ts';
 import { pool } from './src/db/index.ts';
 import { env } from './src/env.ts';
@@ -21,6 +22,8 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
 });
 app.use('/api/auth', authRouter);
+app.use('/api/projects', projectsRouter);
+app.use('/api/users', usersRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });

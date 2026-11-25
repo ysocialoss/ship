@@ -8,6 +8,27 @@
       "when": 1795593957528,
       "tag": "0000_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795597324100,
+      "tag": "0001_projects",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795597795659,
+      "tag": "0002_task_assignee_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795597796766,
+      "tag": "0003_drop_task_assignee_text",
+      "breakpoints": true
     }
   ]
 }

@@ -227,6 +227,9 @@ importers:
       '@blueprintjs/datetime':
         specifier: ^6.3.4
         version: 6.3.4(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@blueprintjs/select':
+        specifier: ^6.4.4
+        version: 6.4.4(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)

@@ -1,7 +1,8 @@
 import {
   Button, Card, Checkbox, Dialog, DialogBody, FormGroup, H1, H2,
-  HTMLSelect, InputGroup, Tag, TextArea,
+  InputGroup, Tag, TextArea,
 } from '@blueprintjs/core'
+import { Dropdown } from './Dropdown'
 import {
   DndContext, DragOverlay, MouseSensor, TouchSensor, pointerWithin,
   useDraggable, useDroppable, useSensor, useSensors,
@@ -11,6 +12,7 @@ import { lazy, Suspense, useLayoutEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import { columns } from './boardColumns'
 import type { ColumnId } from './boardColumns'
+import type { Assignable, Module, Task } from './workspace'
 
 const DateInput = lazy(async () => {
   const { DateInput } = await import('@blueprintjs/datetime')
@@ -23,44 +25,20 @@ interface DropTarget {
   after: boolean
 }
 
-interface ChecklistItem {
-  id: string
-  title: string
-  done: boolean
-}
-
-interface Task {
-  id: string
-  column: ColumnId
-  title: string
-  description: string
-  labels: string
-  assignee: string
-  dueDate: string
-  checklist: ChecklistItem[]
-}
-
-const storageKey = 'ship.board.v1'
 const detectCollision: CollisionDetection = (args) => {
   const hits = pointerWithin(args)
   const card = hits.find(({ id }) => !columns.some((column) => column.id === id))
   return card ? [card] : hits
 }
 
-function loadTasks(): Task[] {
-  try {
-    const saved = localStorage.getItem(storageKey)
-    const parsed: unknown = saved ? JSON.parse(saved) : []
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-export function Board() {
-  const [tasks, setTasks] = useState(loadTasks)
+export function Board({ tasks, modules, people, onTasksChange }: {
+  tasks: Task[]
+  modules: Module[]
+  /** Who work items can be assigned to. */
+  people: Assignable[]
+  onTasksChange: (tasks: Task[]) => void
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [storageError, setStorageError] = useState(false)
   const [draggedId, setDraggedId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const [announcement, setAnnouncement] = useState('')
@@ -73,19 +51,13 @@ export function Board() {
   )
 
   function saveTasks(next: Task[]) {
-    setTasks(next)
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(next))
-      setStorageError(false)
-    } catch {
-      setStorageError(true)
-    }
+    onTasksChange(next)
   }
 
   function addTask(column: ColumnId, title: string) {
     const task: Task = {
       id: crypto.randomUUID(), column, title,
-      description: '', labels: '', assignee: '', dueDate: '', checklist: [],
+      description: '', labels: '', assigneeId: '', dueDate: '', moduleId: '', checklist: [],
     }
     saveTasks([...tasks, task])
     setAnnouncement(title + ' added to ' + columns.find((entry) => entry.id === column)?.title)
@@ -148,7 +120,6 @@ export function Board() {
     <main className="board">
       <H1 id="work-items">Work Items</H1>
       <div className="board-announcement" role="status">{announcement}</div>
-      {storageError && <p role="alert">Board changes could not be saved in this browser.</p>}
       <DndContext
         sensors={sensors}
         collisionDetection={detectCollision}
@@ -172,7 +143,7 @@ export function Board() {
                         : undefined
                       return (
                         <DragCard key={task.id} id={task.id} marker={marker}>
-                          <CardContent task={task} column={column} onOpen={() => setSelectedId(task.id)} />
+                          <CardContent task={task} column={column} people={people} onOpen={() => setSelectedId(task.id)} />
                         </DragCard>
                       )
                     })}
@@ -186,7 +157,7 @@ export function Board() {
           {dragged && draggedColumn && (
             <div className="board-drag-preview" aria-hidden="true">
               <Card className="board-card">
-                <CardContent task={dragged} column={draggedColumn} />
+                <CardContent task={dragged} column={draggedColumn} people={people} />
               </Card>
             </div>
           )}
@@ -197,6 +168,8 @@ export function Board() {
           <TaskDetails
             key={selected.id}
             task={selected}
+            modules={modules}
+            people={people}
             onChange={(changes) => updateTask(selected.id, changes)}
             onMove={(column) => moveTask(selected.id, column)}
           />
@@ -242,13 +215,15 @@ function DragCard({ id, marker, children }: {
   )
 }
 
-function CardContent({ task, column, onOpen }: {
+function CardContent({ task, column, people, onOpen }: {
+  people: Assignable[]
   task: Task
   column: (typeof columns)[number]
   onOpen?: () => void
 }) {
   const title = task.title.trim() || 'Untitled card'
   const completed = task.checklist.filter((item) => item.done).length
+  const assignee = task.assigneeId ? people.find(({ id }) => id === task.assigneeId) : undefined
   const labels = [...new Set(task.labels.split(',').map((label) => label.trim()).filter(Boolean))]
 
   return (
@@ -261,7 +236,7 @@ function CardContent({ task, column, onOpen }: {
       <div className="card-meta">
         <Tag icon={column.icon} intent={column.intent} minimal>{column.title}</Tag>
         {labels.map((label) => <Tag key={label} intent="primary" minimal>{label}</Tag>)}
-        {task.assignee && <Tag minimal>{task.assignee}</Tag>}
+        {assignee && <Tag minimal icon="person">@{assignee.username}</Tag>}
         {task.dueDate && <Tag minimal>Due {task.dueDate}</Tag>}
         {task.checklist.length > 0 && (
           <Tag minimal icon="tick" intent={completed === task.checklist.length ? 'success' : 'none'}>
@@ -375,8 +350,10 @@ function LaneContent({ column, count, onAdd, children }: {
     </>
   )
 }
-function TaskDetails({ task, onChange, onMove }: {
+function TaskDetails({ task, modules, people, onChange, onMove }: {
   task: Task
+  modules: Module[]
+  people: Assignable[]
   onChange: (changes: Partial<Omit<Task, 'id' | 'column'>>) => void
   onMove: (column: ColumnId) => void
 }) {
@@ -395,14 +372,23 @@ function TaskDetails({ task, onChange, onMove }: {
         <InputGroup id="task-title" value={task.title} onChange={(event) => onChange({ title: event.currentTarget.value })} />
       </FormGroup>
       <FormGroup label="Move to" labelFor="task-column">
-        <HTMLSelect
+        <Dropdown
           id="task-column"
           value={task.column}
           options={columns.map(({ id, title }) => ({ value: id, label: title }))}
-          onChange={(event) => {
-            const column = columns.find(({ id }) => id === event.currentTarget.value)
+          onChange={(value) => {
+            const column = columns.find(({ id }) => id === value)
             if (column) onMove(column.id)
           }}
+        />
+      </FormGroup>
+      <FormGroup label="Module" labelFor="task-module">
+        <Dropdown
+          id="task-module"
+          fill
+          value={task.moduleId}
+          options={[{ value: '', label: 'No module' }, ...modules.map(({ id, name }) => ({ value: id, label: name }))]}
+          onChange={(moduleId) => onChange({ moduleId })}
         />
       </FormGroup>
       <FormGroup label="Description" labelFor="task-description">
@@ -413,7 +399,20 @@ function TaskDetails({ task, onChange, onMove }: {
       </FormGroup>
       <div className="task-metadata-fields">
         <FormGroup label="Assignee" labelFor="task-assignee">
-          <InputGroup id="task-assignee" value={task.assignee} onChange={(event) => onChange({ assignee: event.currentTarget.value })} />
+          <Dropdown
+            id="task-assignee"
+            fill
+            value={task.assigneeId}
+            options={[
+              { value: '', label: 'Unassigned' },
+              ...people.map(({ id, username }) => ({ value: id, label: '@' + username })),
+              // Keep showing someone who has since left, rather than silently blanking the field.
+              ...(task.assigneeId && !people.some(({ id }) => id === task.assigneeId)
+                ? [{ value: task.assigneeId, label: 'Former member' }]
+                : []),
+            ]}
+            onChange={(assigneeId) => onChange({ assigneeId })}
+          />
         </FormGroup>
         <FormGroup label="Due date" labelFor="task-due-date">
           <Suspense fallback={<InputGroup id="task-due-date" disabled />}>
