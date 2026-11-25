@@ -384,7 +384,7 @@ function CardContent({ task, column, people, onOpen }: {
       )}
       <div className="card-meta">
         <Tag icon={columnIcon[column.intent]} intent={column.intent} minimal>{column.title}</Tag>
-        {labels.map((label) => <Tag key={label} intent="primary" minimal>{label}</Tag>)}
+        {labels.map((label) => <Tag key={label} minimal>{label}</Tag>)}
         {assignee && <Tag minimal icon="person">@{assignee.username}</Tag>}
         {task.dueDate && <Tag minimal>Due {task.dueDate}</Tag>}
         {task.checklist.length > 0 && (

@@ -13,15 +13,14 @@
   --lane-background: var(--bp-palette-light-gray-5);
   --lane-border: var(--bp-palette-light-gray-2);
   --card-hover: var(--bp-palette-light-gray-5);
-  --card-focus: var(--bp-palette-blue-3);
+  --card-focus: var(--app-accent);
   padding: 24px clamp(12px, 3vw, 32px);
 }
 
 .bp6-dark .board {
   --lane-background: var(--bp-palette-dark-gray-2);
   --lane-border: var(--bp-palette-dark-gray-4);
-  --card-hover: var(--bp-palette-dark-gray-3);
-  --card-focus: var(--bp-palette-blue-5);
+  --card-hover: var(--bp-palette-dark-gray-4);
 }
 
 .board-lanes {
@@ -156,11 +155,7 @@
 }
 
 .board-lane.is-drop-lane {
-  border-color: var(--bp-palette-blue-3);
-}
-
-.bp6-dark .board-lane.is-drop-lane {
-  border-color: var(--bp-palette-blue-5);
+  border-color: var(--app-accent);
 }
 
 .board-slot {
@@ -172,13 +167,9 @@
   inset-inline: 0;
   height: 3px;
   border-radius: 2px;
-  background: var(--bp-palette-blue-3);
+  background: var(--app-accent);
   content: '';
   pointer-events: none;
-}
-
-.bp6-dark .board-slot[data-drop]::after {
-  background: var(--bp-palette-blue-5);
 }
 
 .board-slot[data-drop="before"]::after {
@@ -656,7 +647,7 @@
 
 .share-error {
   margin: 4px 0 0;
-  color: var(--bp-intent-danger-default, #cd4246);
+  color: var(--bp-typography-color-danger-rest);
   font-size: 12px;
 }
 
@@ -706,7 +697,6 @@ button.project-invite {
   align-items: flex-start;
   gap: 8px;
   width: 100%;
-  min-height: 72px;
   color: var(--bp-palette-gray-1);
   font: inherit;
   text-align: start;
